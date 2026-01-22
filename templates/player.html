@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block head %}
+<!-- 使用本地 hls.js -->
+<script src="{{ url_for('static', filename='js/hls.js') }}"></script>
+<style>
+    .video-container {
+        width: 100%;
+        max-width: 1000px;
+        margin: 0 auto;
+        background: black;
+    }
+    video {
+        width: 100%;
+        height: auto;
+        display: block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="margin-bottom: 20px;">
+        <a href="{{ url_for('view_collection', collection_id=video['collection_id']) }}" class="btn">← 返回合集</a>
+    </div>
+    
+    <h2>{{ video['title'] }}</h2>
+    
+    <div class="video-container">
+        <video id="video" controls></video>
+    </div>
+    
+    <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+        <h3 style="margin-top: 0;">视频信息</h3>
+        <p><strong>文件名称:</strong> {{ video['original_filename'] }}</p>
+        <p><strong>上传时间:</strong> {{ video['created_at'] }}</p>
+    </div>
+</div>
+
+<script>
+    var video = document.getElementById('video');
+    // 构建 m3u8 文件的 URL
+    // 从数据库 folder_path 中提取最后的部分，或者直接拼装
+    // 我们的 folder_path 类似于 'media/1'，所以我们需要 'media/1/index.m3u8'
+    var videoSrc = "/media/{{ video['id'] }}/index.m3u8";
+    
+    if (Hls.isSupported()) {
+        var hls = new Hls();
+        hls.loadSource(videoSrc);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, function() {
+            // video.play(); // 自动播放可选
+        });
+        
+        hls.on(Hls.Events.ERROR, function(event, data) {
+             if (data.fatal) {
+                switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    // try to recover network error
+                    console.log("fatal network error encountered, try to recover");
+                    hls.startLoad();
+                    break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    console.log("fatal media error encountered, try to recover");
+                    hls.recoverMediaError();
+                    break;
+                default:
+                    // cannot recover
+                    hls.destroy();
+                    break;
+                }
+            }
+        });
+    }
+    else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = videoSrc;
+    }
+</script>
+{% endblock %}

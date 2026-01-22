@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h2>{{ collection['title'] }}</h2>
+            <p>{{ collection['description'] }}</p>
+        </div>
+        <a href="{{ url_for('index') }}" class="btn">返回首页</a>
+    </div>
+</div>
+
+<div class="card">
+    <h3>视频列表</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>标题</th>
+                <th>上传时间</th>
+                <th>状态</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for video in videos %}
+            <tr>
+                <td>{{ video['title'] }}</td>
+                <td>{{ video['created_at'][:16] }}</td>
+                <td>
+                    {% if video['status'] == 'completed' %}
+                        <span class="status-badge status-completed">已完成</span>
+                    {% elif video['status'] == 'processing' %}
+                        <span class="status-badge status-processing">转码中</span>
+                    {% elif video['status'] == 'error' %}
+                        <span class="status-badge status-error">失败</span>
+                    {% else %}
+                        <span class="status-badge status-pending">等待中</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if video['status'] == 'completed' %}
+                        <a href="{{ url_for('play_video', video_id=video['id']) }}" class="btn btn-success">播放</a>
+                    {% else %}
+                        <button class="btn" disabled style="background:#ccc">不可用</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" style="text-align: center;">该合集下暂无视频</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

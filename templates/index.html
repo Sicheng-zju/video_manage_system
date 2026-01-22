@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>视频合集</h2>
+    <p>选择一个合集开始浏览视频</p>
+</div>
+
+<div class="grid">
+    {% for collection in collections %}
+    <a href="{{ url_for('view_collection', collection_id=collection['id']) }}" style="text-decoration: none; color: inherit;">
+        <div class="card collection-card">
+            <div class="collection-title">📁 {{ collection['title'] }}</div>
+            <p>{{ collection['description'] }}</p>
+            <div class="collection-meta">创建于: {{ collection['created_at'][:10] }}</div>
+        </div>
+    </a>
+    {% else %}
+    <div class="card" style="grid-column: 1/-1; text-align: center;">
+        <p>暂无合集，请管理员登录创建。</p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

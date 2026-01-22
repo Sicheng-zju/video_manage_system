@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>管理面板</h2>
+    <p>欢迎回来，管理员。</p>
+</div>
+
+<div class="grid">
+    <!-- 创建合集 -->
+    <div class="card">
+        <h3>1. 创建新合集</h3>
+        <form action="{{ url_for('create_collection') }}" method="post">
+            <div class="form-group">
+                <label>合集标题</label>
+                <input type="text" name="title" required>
+            </div>
+            <div class="form-group">
+                <label>描述</label>
+                <textarea name="description" rows="3"></textarea>
+            </div>
+            <button type="submit" class="btn">创建合集</button>
+        </form>
+    </div>
+
+    <!-- 上传视频 -->
+    <div class="card">
+        <h3>2. 上传视频</h3>
+        <form action="{{ url_for('upload_video') }}" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>选择合集</label>
+                <select name="collection_id" required>
+                    {% for c in collections %}
+                        <option value="{{ c['id'] }}">{{ c['title'] }}</option>
+                    {% else %}
+                        <option value="" disabled selected>请先创建合集</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>视频标题 (可选，默认为文件名)</label>
+                <input type="text" name="title">
+            </div>
+            <div class="form-group">
+                <label>选择视频文件 (MP4/MOV/AVI等)</label>
+                <input type="file" name="video_file" accept="video/*" required>
+            </div>
+            <p style="color: #666; font-size: 0.9rem;">
+                注意：文件上传后将在后台进行转码处理，大文件可能需要较长时间。
+            </p>
+            <button type="submit" class="btn">上传并转码</button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <h3>管理现有合集</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>标题</th>
+                <th>描述</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for collection in collections %}
+            <tr>
+                <td>{{ collection['id'] }}</td>
+                <td>{{ collection['title'] }}</td>
+                <td>{{ collection['description'] }}</td>
+                <td>
+                    <button class="btn" style="padding: 2px 8px; background: #95a5a6;" onclick="openCollectionModal('{{ collection['id'] }}', '{{ collection['title'] }}', '{{ collection['description']|replace('\r', '')|replace('\n', ' ') }}')">编辑</button>
+                    <!-- 删除功能如果不通过表单，需要做成 post 请求，这里简单起见为了排版只放编辑，如果需要删除可以再加 -->
+                    <form action="{{ url_for('delete_collection', collection_id=collection['id']) }}" method="POST" style="display:inline;" onsubmit="return confirm('确定要删除这个合集吗？只能删除空合集。');">
+                        <button type="submit" class="btn btn-danger" style="padding: 2px 8px;">删除</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4">暂无合集</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h3>所有视频状态</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>标题</th>
+                <th>所属合集</th>
+                <th>状态</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for video in videos %}
+            <tr>
+                <td>{{ video['id'] }}</td>
+                <td>{{ video['title'] }}</td>
+                <td>{{ video['collection_title'] }}</td>
+                <td>
+                    {% if video['status'] == 'completed' %}
+                        <span class="status-badge status-completed">完成</span>
+                    {% elif video['status'] == 'processing' %}
+                        <span class="status-badge status-processing">转码中...</span>
+                    {% elif video['status'] == 'error' %}
+                        <span class="status-badge status-error" title="{{ video['error_msg'] }}">出错</span>
+                    {% else %}
+                        <span class="status-badge status-pending">等待</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if video['status'] == 'completed' %}
+                    <a href="{{ url_for('play_video', video_id=video['id']) }}" target="_blank" class="btn" style="padding: 2px 8px; font-size: 12px;">预览</a>
+                    {% endif %}
+                    <button class="btn" style="padding: 2px 8px; font-size: 12px; background: #95a5a6;" onclick="openVideoModal('{{ video['id'] }}', '{{ video['title'] }}')">编辑</button>
+                    
+                    <form action="{{ url_for('delete_video', video_id=video['id']) }}" method="POST" style="display:inline;" onsubmit="return confirm('确定要删除这个视频吗？此操作不可逆。');">
+                        <button type="submit" class="btn btn-danger" style="padding: 2px 8px; font-size: 12px;">删除</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Modal 样式 -->
+<div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
+    <div style="background:white; margin:10% auto; padding:20px; width:90%; max-width:500px; border-radius:8px; position:relative;">
+        <span onclick="closeModal()" style="position:absolute; right:15px; top:10px; cursor:pointer; font-size:24px;">&times;</span>
+        <h3 id="modalTitle">编辑</h3>
+        <form id="editForm" method="POST">
+            <div id="modalContent">
+                <!-- 动态内容 -->
+            </div>
+            <div style="margin-top:20px; text-align:right;">
+                <button type="button" class="btn" style="background:#7f8c8d;" onclick="closeModal()">取消</button>
+                <button type="submit" class="btn">保存更改</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openCollectionModal(id, title, description) {
+    document.getElementById('modalTitle').innerText = '编辑合集';
+    document.getElementById('editForm').action = '/api/edit_collection/' + id;
+    
+    document.getElementById('modalContent').innerHTML = `
+        <div class="form-group">
+            <label>合集标题</label>
+            <input type="text" name="title" value="${title}" required>
+        </div>
+        <div class="form-group">
+            <label>描述</label>
+            <textarea name="description" rows="3">${description}</textarea>
+        </div>
+    `;
+    
+    document.getElementById('editModal').style.display = 'block';
+}
+
+function openVideoModal(id, title) {
+    document.getElementById('modalTitle').innerText = '编辑视频信息';
+    document.getElementById('editForm').action = '/api/edit_video/' + id;
+    
+    document.getElementById('modalContent').innerHTML = `
+        <div class="form-group">
+            <label>视频标题</label>
+            <input type="text" name="title" value="${title}" required>
+        </div>
+    `;
+    
+    document.getElementById('editModal').style.display = 'block';
+}
+
+function closeModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+
+// 点击外部关闭
+window.onclick = function(event) {
+    var modal = document.getElementById('editModal');
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+</script>
+{% endblock %}

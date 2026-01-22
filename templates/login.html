@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 400px; margin: 50px auto;">
+    <h2 style="text-align: center;">管理员登录</h2>
+    <form method="post">
+        <div class="form-group">
+            <label>密码</label>
+            <input type="password" name="password" required placeholder="请输入管理员密码">
+        </div>
+        <button type="submit" class="btn" style="width: 100%;">登录</button>
+    </form>
+    <p style="text-align: center; margin-top: 1rem; color: #7f8c8d; font-size: 0.9rem;">
+        默认密码: admin123
+    </p>
+</div>
+{% endblock %}
