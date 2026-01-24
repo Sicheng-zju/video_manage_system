@@ -48,6 +48,9 @@ python app.py
 - `temp_uploads/`: 临时上传文件夹 (自动生成)
 - `video_system.db`: SQLite 数据库 (自动生成)
 
+## 许可证
+本项目采用 [MIT License](LICENSE) 许可证。
+
 ## 使用流程
 1. 访问 `/login` 登录管理员 (密码 `admin123`)。
 2. 进入后台，先创建一个“合集”。
