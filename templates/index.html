@@ -4,6 +4,14 @@
 <div class="card">
     <h2>视频合集</h2>
     <p>选择一个合集开始浏览视频</p>
+    
+    <form action="{{ url_for('index') }}" method="get" style="margin-top: 15px; display: flex; gap: 10px;">
+        <input type="text" name="q" placeholder="搜索合集标题 or 描述..." value="{{ search_query|default('') }}" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+        <button type="submit" style="padding: 10px 20px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">搜索</button>
+        {% if search_query %}
+        <a href="{{ url_for('index') }}" style="padding: 10px 20px; background-color: #95a5a6; color: white; text-decoration: none; border-radius: 4px; display: flex; align-items: center;">清除</a>
+        {% endif %}
+    </form>
 </div>
 
 <div class="grid">

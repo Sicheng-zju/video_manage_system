@@ -133,10 +133,21 @@ def process_video_task(video_id, input_path, output_dir):
 
 @app.route('/')
 def index():
+    query = request.args.get('q', '')
     conn = get_db()
-    collections = conn.execute('SELECT * FROM collections ORDER BY created_at DESC').fetchall()
+    
+    if query:
+        search_term = f"%{query}%"
+        collections = conn.execute('''
+            SELECT * FROM collections 
+            WHERE title LIKE ? OR description LIKE ? 
+            ORDER BY created_at DESC
+        ''', (search_term, search_term)).fetchall()
+    else:
+        collections = conn.execute('SELECT * FROM collections ORDER BY created_at DESC').fetchall()
+        
     conn.close()
-    return render_template('index.html', collections=collections)
+    return render_template('index.html', collections=collections, search_query=query)
 
 @app.route('/collection/<int:collection_id>')
 def view_collection(collection_id):
@@ -362,4 +373,4 @@ if __name__ == '__main__':
     print("管理员默认密码: admin123")
     init_db() # 确保启动时建表
     # host='0.0.0.0' 允许外部访问
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='127.0.0.1', port=8017, debug=True)
