@@ -15,6 +15,7 @@ app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this-in-production' # 用于session加密
 app.config['UPLOAD_FOLDER'] = 'temp_uploads'
 app.config['MEDIA_FOLDER'] = 'media'
+app.config['ATTACHMENT_FOLDER'] = 'attachments'
 # app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 已注释掉大小限制
 app.config['DATABASE'] = 'video_system.db'
 ADMIN_PASSWORD_HASH = generate_password_hash('admin123') # 默认密码 admin123
@@ -22,6 +23,7 @@ ADMIN_PASSWORD_HASH = generate_password_hash('admin123') # 默认密码 admin123
 # 确保目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['MEDIA_FOLDER'], exist_ok=True)
+os.makedirs(app.config['ATTACHMENT_FOLDER'], exist_ok=True)
 
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -58,6 +60,29 @@ def init_db():
             duration TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (collection_id) REFERENCES collections (id)
+        )
+    ''')
+    # 评论表
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id INTEGER,
+            parent_id INTEGER,
+            content TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_pinned BOOLEAN DEFAULT 0,
+            FOREIGN KEY (video_id) REFERENCES videos (id)
+        )
+    ''')
+    # 附件表
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id INTEGER,
+            filename TEXT,
+            filepath TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (video_id) REFERENCES videos (id)
         )
     ''')
     conn.commit()
@@ -165,12 +190,29 @@ def view_collection(collection_id):
 def play_video(video_id):
     conn = get_db()
     video = conn.execute('SELECT * FROM videos WHERE id = ?', (video_id,)).fetchone()
-    conn.close()
     
     if not video:
+        conn.close()
         return "Video not found", 404
-        
-    return render_template('player.html', video=video)
+
+    # 获取附件
+    attachments = conn.execute('SELECT * FROM attachments WHERE video_id = ? ORDER BY created_at ASC', (video_id,)).fetchall()
+    
+    # 获取评论
+    # 简单的全部取出，然后在前端处理树状结构，或者多次查询
+    # 这里我们取出所有评论，前端根据 parent_id 渲染
+    # 排序：置顶的在最前，然后是新评论
+    comments = conn.execute('''
+        SELECT * FROM comments 
+        WHERE video_id = ? 
+        ORDER BY is_pinned DESC, created_at DESC
+    ''', (video_id,)).fetchall()
+
+    conn.close()
+    
+    # 为了方便前端处理嵌套评论，这里可以做一点预处理，或者直接传给前端
+    # 直接传 simpler
+    return render_template('player.html', video=video, attachments=attachments, comments=comments)
 
 # 提供视频切片文件的静态路由
 @app.route('/media/<path:filename>')
@@ -361,6 +403,144 @@ def upload_video():
         
         flash('视频上传成功，正在后台转码中...')
         return redirect(url_for('dashboard'))
+
+# --- 附件管理 ---
+
+@app.route('/api/upload_attachment/<int:video_id>', methods=['POST'])
+def upload_attachment(video_id):
+    if not session.get('is_admin'):
+        return "Unauthorized", 401
+    
+    file = request.files.get('file')
+    if not file or file.filename == '':
+        flash('未选择文件')
+        return redirect(url_for('dashboard'))
+    
+    display_filename = file.filename
+    safe_filename = secure_filename(file.filename)
+    if not safe_filename:
+        safe_filename = "attachment"
+    
+    # 防止重名覆盖，添加 uuid 前缀
+    save_filepath = f"{uuid.uuid4().hex[:8]}_{safe_filename}"
+    file_path = os.path.join(app.config['ATTACHMENT_FOLDER'], save_filepath)
+    
+    file.save(file_path)
+    
+    conn = get_db()
+    conn.execute('INSERT INTO attachments (video_id, filename, filepath) VALUES (?, ?, ?)',
+                 (video_id, display_filename, save_filepath))
+    conn.commit()
+    conn.close()
+    
+    flash('附件上传成功')
+    return redirect(request.referrer or url_for('dashboard'))
+
+@app.route('/api/delete_attachment/<int:attachment_id>', methods=['POST'])
+def delete_attachment(attachment_id):
+    if not session.get('is_admin'):
+        return "Unauthorized", 401
+    
+    conn = get_db()
+    att = conn.execute('SELECT * FROM attachments WHERE id = ?', (attachment_id,)).fetchone()
+    
+    if att:
+        conn.execute('DELETE FROM attachments WHERE id = ?', (attachment_id,))
+        conn.commit()
+        
+        full_path = os.path.join(app.config['ATTACHMENT_FOLDER'], att['filepath'])
+        try:
+            if os.path.exists(full_path):
+                os.remove(full_path)
+        except Exception as e:
+            logging.error(f"Failed to delete attachment file: {e}")
+            
+        flash('附件已删除')
+    
+    conn.close()
+    return redirect(request.referrer or url_for('dashboard'))
+
+@app.route('/attachments/<path:filename>')
+def serve_attachment(filename):
+    # as_attachment=False 让浏览器尝试预览（如PDF/图片），无法预览的会自动下载
+    return send_from_directory(app.config['ATTACHMENT_FOLDER'], filename, as_attachment=False)
+
+@app.route('/api/video/<int:video_id>/attachments_list')
+def get_video_attachments(video_id):
+    if not session.get('is_admin'):
+        return "Unauthorized", 401
+    conn = get_db()
+    attachments = conn.execute('SELECT * FROM attachments WHERE video_id = ? ORDER BY created_at ASC', (video_id,)).fetchall()
+    conn.close()
+    
+    return jsonify([dict(id=row['id'], filename=row['filename'], filepath=row['filepath']) for row in attachments])
+
+# --- 评论功能 ---
+
+@app.route('/api/video/<int:video_id>/comment', methods=['POST'])
+def post_comment(video_id):
+    content = request.form.get('content')
+    parent_id = request.form.get('parent_id') # Optional
+    
+    if not content or not content.strip():
+        # 如果是普通表单提交，还是 flash + redirect，如果是 ajax 则 json
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+             return jsonify({'status': 'error', 'message': '评论内容不能为空'}), 400
+        flash('评论内容不能为空')
+        return redirect(url_for('play_video', video_id=video_id))
+        
+    conn = get_db()
+    cursor = conn.execute('INSERT INTO comments (video_id, parent_id, content) VALUES (?, ?, ?)',
+                 (video_id, parent_id if parent_id else None, content))
+    comment_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.accept_mimetypes.accept_json:
+        return jsonify({
+            'status': 'success',
+            'comment': {
+                'id': comment_id,
+                'content': content,
+                'parent_id': parent_id,
+                'created_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'is_pinned': 0
+            }
+        })
+    
+    return redirect(url_for('play_video', video_id=video_id))
+
+@app.route('/api/comment/<int:comment_id>/delete', methods=['POST'])
+def delete_comment(comment_id):
+    if not session.get('is_admin'):
+        return "Unauthorized", 401
+        
+    conn = get_db()
+    # 级联删除子评论? 简单起见，不级联，或者手动级联。
+    # 这里我们只删除该评论，子评论如果变成孤儿也无所谓，或者设为 [已删除]
+    # 我们选择直接删除
+    conn.execute('DELETE FROM comments WHERE id = ?', (comment_id,))
+    conn.commit()
+    conn.close()
+    
+    # 尝试返回上一页
+    return redirect(request.referrer or url_for('index'))
+
+@app.route('/api/comment/<int:comment_id>/pin', methods=['POST'])
+def pin_comment(comment_id):
+    if not session.get('is_admin'):
+        return "Unauthorized", 401
+        
+    conn = get_db()
+    # 获取当前状态
+    curr = conn.execute('SELECT is_pinned FROM comments WHERE id = ?', (comment_id,)).fetchone()
+    if curr:
+        new_status = 0 if curr['is_pinned'] else 1
+        conn.execute('UPDATE comments SET is_pinned = ? WHERE id = ?', (new_status, comment_id))
+        conn.commit()
+        
+    conn.close()
+    return redirect(request.referrer or url_for('index'))
 
 @app.before_request
 def before_request_func():

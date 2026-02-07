@@ -15,7 +15,26 @@
         height: auto;
         display: block;
     }
+    .attachment-list { margin-top: 20px; }
+    .attachment-item { display: flex; align-items: center; justify-content: space-between; padding: 10px; border-bottom: 1px solid #eee; }
+    .comment-section { margin-top: 30px; }
+    .comment-item { padding: 15px; border-bottom: 1px solid #eee; }
+    .comment-item.pinned { background-color: #fff8e1; border-left: 3px solid #f1c40f; }
+    .comment-meta { color: #666; font-size: 0.85em; margin-bottom: 5px; }
+    .comment-actions { font-size: 0.8em; margin-top: 5px; }
+    .reply-form { margin-top: 10px; display: none; padding-left: 20px; border-left: 2px solid #ddd; }
+    .replies { margin-left: 30px; border-left: 1px solid #eee; }
 </style>
+<script>
+    function toggleReply(id) {
+        var form = document.getElementById('reply-form-' + id);
+        if (form.style.display === 'none' || form.style.display === '') {
+            form.style.display = 'block';
+        } else {
+            form.style.display = 'none';
+        }
+    }
+</script>
 {% endblock %}
 
 {% block content %}
@@ -34,6 +53,95 @@
         <h3 style="margin-top: 0;">视频信息</h3>
         <p><strong>文件名称:</strong> {{ video['original_filename'] }}</p>
         <p><strong>上传时间:</strong> {{ video['created_at'] }}</p>
+    </div>
+
+    <!-- 附件区 -->
+    {% if attachments %}
+    <div style="margin-top: 20px; padding: 15px; border: 1px solid #eee; border-radius: 5px;">
+        <h3 style="margin-top: 0;">📚 附件资料</h3>
+        <div class="attachment-list">
+            {% for file in attachments %}
+            <div class="attachment-item">
+                <span>📄 {{ file['filename'] }}</span>
+                <a href="{{ url_for('serve_attachment', filename=file['filepath']) }}" target="_blank" class="btn" style="padding: 5px 10px; font-size: 0.9em; background-color: #3498db;">查看/下载</a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 评论区 -->
+    <div class="card comment-section">
+        <h3>💬 匿名评论</h3>
+        
+        <form action="{{ url_for('post_comment', video_id=video['id']) }}" method="post" style="margin-bottom: 20px;">
+            <div class="form-group">
+                <textarea name="content" rows="3" placeholder="写下你的评论..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;" required></textarea>
+            </div>
+            <button type="submit" class="btn">发表评论</button>
+        </form>
+        
+        <div class="comments-list">
+            {% for comment in comments %}
+                {% if not comment['parent_id'] %}
+                    <div class="comment-item {% if comment['is_pinned'] %}pinned{% endif %}">
+                        <div class="comment-content">
+                            {% if comment['is_pinned'] %}<span title="置顶">📌</span>{% endif %}
+                            {{ comment['content'] }}
+                        </div>
+                        <div class="comment-meta">
+                            {{ comment['created_at'] }}
+                            <a href="javascript:void(0)" onclick="toggleReply('{{ comment['id'] }}')" style="margin-left: 10px;">回复</a>
+                            {% if session.get('is_admin') %}
+                                <span style="margin: 0 5px;">|</span>
+                                <form action="{{ url_for('delete_comment', comment_id=comment['id']) }}" method="POST" style="display:inline" onsubmit="return confirm('确定删除?')">
+                                    <button type="submit" style="background:none; border:none; color:red; cursor:pointer; font-size: inherit;">删除</button>
+                                </form>
+                                <span style="margin: 0 5px;">|</span>
+                                <form action="{{ url_for('pin_comment', comment_id=comment['id']) }}" method="POST" style="display:inline">
+                                    <button type="submit" style="background:none; border:none; color:blue; cursor:pointer; font-size: inherit;">
+                                        {{ '取消置顶' if comment['is_pinned'] else '置顶' }}
+                                    </button>
+                                </form>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- 回复框 -->
+                        <div id="reply-form-{{ comment['id'] }}" class="reply-form">
+                            <form action="{{ url_for('post_comment', video_id=video['id']) }}" method="post">
+                                <input type="hidden" name="parent_id" value="{{ comment['id'] }}">
+                                <textarea name="content" rows="2" placeholder="回复..." style="width: 100%; padding: 5px;" required></textarea>
+                                <button type="submit" class="btn" style="margin-top: 5px; font-size: 0.8em; padding: 4px 8px;">提交回复</button>
+                            </form>
+                        </div>
+                        
+                        <!-- 子评论 -->
+                        <div class="replies">
+                            {% for reply in comments %}
+                                {% if reply['parent_id'] == comment['id'] %}
+                                    <div class="comment-item" style="border-bottom: none; padding-bottom: 0; background: none;">
+                                        <div class="comment-content">
+                                            {{ reply['content'] }}
+                                        </div>
+                                        <div class="comment-meta">
+                                            {{ reply['created_at'] }}
+                                            {% if session.get('is_admin') %}
+                                                <span style="margin: 0 5px;">|</span>
+                                                <form action="{{ url_for('delete_comment', comment_id=reply['id']) }}" method="POST" style="display:inline" onsubmit="return confirm('确定删除?')">
+                                                    <button type="submit" style="background:none; border:none; color:red; cursor:pointer; font-size: inherit;">删除</button>
+                                                </form>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endif %}
+            {% else %}
+                <p style="color: #666; text-align: center;">暂无评论，快来抢沙发吧~</p>
+            {% endfor %}
+        </div>
     </div>
 </div>
 
@@ -74,6 +182,107 @@
     }
     else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = videoSrc;
+    }
+
+    // AJAX 评论处理
+    document.addEventListener('submit', function(e) {
+        if (e.target.tagName === 'FORM' && e.target.action.includes('/comment')) {
+            // 排除删除和置顶的操作
+            if (e.target.action.includes('/delete') || e.target.action.includes('/pin')) {
+                return;
+            }
+
+            e.preventDefault();
+            var form = e.target;
+            var formData = new FormData(form);
+            
+            fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // 清空输入框
+                    form.reset();
+                    // 隐藏回复框
+                    if (form.closest('.reply-form')) {
+                        form.closest('.reply-form').style.display = 'none';
+                    }
+                    // 添加到界面
+                    addCommentToDom(data.comment);
+                } else {
+                    alert(data.message || 'Error posting comment');
+                }
+            })
+            .catch(err => console.error(err));
+        }
+    });
+
+    function addCommentToDom(comment) {
+        var htmlContent = `
+            <div class="comment-content">
+                ${comment.content}
+            </div>
+            <div class="comment-meta">
+                ${comment.created_at}
+            </div>
+        `;
+
+        if (comment.parent_id) {
+            // 回复
+            var parentForm = document.getElementById('reply-form-' + comment.parent_id);
+            if (parentForm) {
+                var parentItem = parentForm.parentElement; 
+                var repliesContainer = parentItem.querySelector('.replies');
+                
+                var replyDiv = document.createElement('div');
+                replyDiv.className = 'comment-item';
+                replyDiv.style.borderBottom = 'none';
+                replyDiv.style.paddingBottom = '0';
+                replyDiv.style.background = 'none';
+                replyDiv.innerHTML = htmlContent;
+                
+                repliesContainer.appendChild(replyDiv);
+            }
+        } else {
+            // 主评论
+            var list = document.querySelector('.comments-list');
+            var noCom = list.querySelector('p');
+            if (noCom && noCom.innerText.includes('暂无评论')) {
+                noCom.remove();
+            }
+
+            var commentDiv = document.createElement('div');
+            commentDiv.className = 'comment-item';
+            
+            var actionUrl = window.location.pathname.replace('/play/', '/api/video/') + '/comment';
+            
+            htmlContent += `
+                 <a href="javascript:void(0)" onclick="toggleReply('${comment.id}')" style="margin-left: 10px;">回复</a>
+                 <div id="reply-form-${comment.id}" class="reply-form">
+                    <form action="${actionUrl}" method="post">
+                        <input type="hidden" name="parent_id" value="${comment.id}">
+                        <textarea name="content" rows="2" placeholder="回复..." style="width: 100%; padding: 5px;" required></textarea>
+                        <button type="submit" class="btn" style="margin-top: 5px; font-size: 0.8em; padding: 4px 8px;">提交回复</button>
+                    </form>
+                </div>
+                <div class="replies"></div>
+            `;
+            
+            commentDiv.innerHTML = htmlContent;
+            
+            // 插入到置顶评论之后（即第一个非 pinned 之前）
+            var firstUnpinned = list.querySelector('.comment-item:not(.pinned)');
+            if (firstUnpinned) {
+                list.insertBefore(commentDiv, firstUnpinned);
+            } else {
+                list.appendChild(commentDiv);
+            }
+        }
     }
 </script>
 {% endblock %}
