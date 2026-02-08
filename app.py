@@ -311,6 +311,22 @@ def delete_video(video_id):
     video = conn.execute('SELECT * FROM videos WHERE id = ?', (video_id,)).fetchone()
     
     if video:
+        # 删除关联的附件文件
+        attachments = conn.execute('SELECT * FROM attachments WHERE video_id = ?', (video_id,)).fetchall()
+        for att in attachments:
+            try:
+                att_path = os.path.join(app.config['ATTACHMENT_FOLDER'], att['filepath'])
+                if os.path.exists(att_path):
+                    os.remove(att_path)
+            except Exception as e:
+                logging.error(f"删除附件文件失败: {e}")
+
+        # 删除附件记录
+        conn.execute('DELETE FROM attachments WHERE video_id = ?', (video_id,))
+        
+        # 删除评论记录
+        conn.execute('DELETE FROM comments WHERE video_id = ?', (video_id,))
+
         # 删除数据库记录
         conn.execute('DELETE FROM videos WHERE id = ?', (video_id,))
         conn.commit()
