@@ -1,3 +1,5 @@
 /.venv
 /video_system.db
 /attachments/
+/media/
+/temp_uploads/
